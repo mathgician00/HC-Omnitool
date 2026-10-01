@@ -1,0 +1,6 @@
+{
+  "name": "Holiday Camp Certificate Manager",
+  "description": "Internal self-service recap and bulk certificate generator for branch admins.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
