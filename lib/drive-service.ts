@@ -107,7 +107,17 @@ export async function findOrCreateRecapSheet(
   const { drive } = getUserGoogleClients(accessToken);
   const config = getProgramConfig();
 
-  const q = `mimeType = 'application/vnd.google-apps.spreadsheet' and '${folderId}' in parents and 'me' in owners and trashed = false`;
+  // Drive-wide search by name + ownership — NOT scoped to folderId's children.
+  // This mirrors findOrCreateFolder's approach above: if the admin moves the
+  // recap FILE itself out of the program folder (independently of the folder
+  // ever moving), this still finds it, rather than creating a duplicate back
+  // inside the folder and orphaning the moved one.
+  //
+  // Drive's query language has no native "starts with" operator, so `contains`
+  // is used here only to narrow the API result set; the precise prefix check
+  // still happens client-side below via `.startsWith()`, unchanged.
+  const escapedPrefix = searchPrefix.replace(/'/g, "\\'");
+  const q = `mimeType = 'application/vnd.google-apps.spreadsheet' and 'me' in owners and trashed = false and name contains '${escapedPrefix}'`;
 
   const listRes = await drive.files.list({
     q,
@@ -129,7 +139,7 @@ export async function findOrCreateRecapSheet(
 
   if (!config.templateSheetId) {
     throw new Error(
-      `No existing recap sheet starting with '${searchPrefix}' was found in '${config.folderName}', and TEMPLATE_SHEET_ID is not configured in the application.`
+      `No existing recap sheet starting with '${searchPrefix}' was found, and TEMPLATE_SHEET_ID is not configured in the application.`
     );
   }
 
