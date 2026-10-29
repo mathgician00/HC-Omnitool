@@ -11,7 +11,6 @@ import {
   XCircle,
   FileSpreadsheet,
   LogOut,
-  FolderOpen,
   AlertTriangle,
   FileCheck,
 } from 'lucide-react';
@@ -276,25 +275,6 @@ export default function Dashboard({
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-500">
-          <div className="flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <span>
-              Target Drive Folder: <strong className="text-gray-700">{programFolder.name}</strong>
-            </span>
-            <span className="text-gray-300 hidden md:inline">•</span>
-            <span className="hidden md:inline">
-              Certificates save to: <code className="text-gray-600 bg-gray-100 px-1 py-0.5 rounded">certificates/{"{Course} ({Date_start})"}</code>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400">
-              Filter: <code className="text-gray-600 bg-gray-100 px-1 py-0.5 rounded">Certif_status = siap cetak</code>
-            </span>
-          </div>
-        </div>
-
         {fetchError && (
           <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 flex-shrink-0 text-red-500 mt-0.5" />
@@ -329,7 +309,7 @@ export default function Dashboard({
                   )}
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  All listed rows have status <span className="text-gray-600 font-mono">siap cetak</span> and are ready for bulk issuance.
+                  Students marked ready to print.
                 </p>
               </div>
             </div>
@@ -379,7 +359,7 @@ export default function Dashboard({
                 />
               </div>
               <p className="text-[11px] text-gray-400 mt-1.5">
-                Duplicating template • Replacing tags • Exporting PDF • Writing cell in Recap • Logging audit...
+                Creating certificates and saving them to your Drive. Please keep this page open.
               </p>
             </div>
           )}
@@ -450,9 +430,7 @@ export default function Dashboard({
                 </div>
                 <h3 className="text-base font-semibold text-gray-700 mb-1">No certificates pending</h3>
                 <p className="text-xs text-gray-400 max-w-sm mx-auto mb-4">
-                  There are no rows in this recap sheet with{' '}
-                  <code className="text-gray-600 bg-gray-100 px-1 py-0.5 rounded">Certif_status = &quot;siap cetak&quot;</code>.
-                  Update rows in Google Sheets and click the refresh button above.
+                  No students are marked ready to print yet. Update their status in Google Sheets, then refresh.
                 </p>
                 <a
                   href={recapSheet.webViewLink}
