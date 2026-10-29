@@ -1,3 +1,4 @@
+// Save as: components/Dashboard.tsx (replaces the whole file)
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -17,7 +18,11 @@ import {
 import { RecapRowData } from '@/lib/drive-service';
 
 interface DashboardProps {
-  accessToken: string;
+  // Optional so this file works both before and after the NextAuth migration:
+  // with NextAuth the API routes read the token from the server-side session,
+  // so no token is passed here. If an old page.tsx still passes it, it is
+  // forwarded as a Bearer header; otherwise no Authorization header is sent.
+  accessToken?: string;
   user: {
     name?: string;
     email?: string;
@@ -38,6 +43,8 @@ interface DashboardProps {
     programName: string;
     programDisplayName: string;
   };
+  // Legacy prop kept only so an old page.tsx that still passes it compiles.
+  // The demo mode itself has been removed and this has no effect.
   isDemo?: boolean;
   onReset: () => void;
   onSignOut: () => void;
@@ -62,12 +69,11 @@ export default function Dashboard({
   recapSheet,
   programFolder,
   programInfo,
-  isDemo = false,
   onReset,
   onSignOut,
 }: DashboardProps) {
   const [rows, setRows] = useState<RecapRowData[]>([]);
-  const [sheetTitle, setSheetTitle] = useState('Sheet1');
+  const [sheetTitle, setSheetTitle] = useState('Recap');
   const [certifColLetter, setCertifColLetter] = useState('M');
   const [isLoadingRows, setIsLoadingRows] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -78,82 +84,19 @@ export default function Dashboard({
   const [currentStudentName, setCurrentStudentName] = useState('');
   const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
 
+  const authHeaders: Record<string, string> = accessToken
+    ? { Authorization: `Bearer ${accessToken}` }
+    : {};
+
   useEffect(() => {
     let isCancelled = false;
 
     async function fetchData() {
       setFetchError(null);
 
-      if (isDemo) {
-        await new Promise((r) => setTimeout(r, 400));
-        if (isCancelled) return;
-        setRows([
-          {
-            rowNumber: 2,
-            studentId: '261201-JS-001',
-            student: 'John Smith',
-            course: 'Robotics Adventure',
-            batch: '2612',
-            session: 'Session 1',
-            teacher: 'Mr. David',
-            room: 'Lab A',
-            dateStartRaw: '2026-12-01',
-            dateStartFormatted: '01 Dec 2026',
-            dateEndRaw: '2026-12-05',
-            dateEndFormatted: '05 Dec 2026',
-            score: '95',
-            link: 'https://scratch.mit.edu',
-            certifStatus: 'siap cetak',
-            certif: '',
-          },
-          {
-            rowNumber: 3,
-            studentId: '261201-AL-002',
-            student: 'Amanda Lee',
-            course: 'Robotics Adventure',
-            batch: '2612',
-            session: 'Session 1',
-            teacher: 'Mr. David',
-            room: 'Lab A',
-            dateStartRaw: '2026-12-01',
-            dateStartFormatted: '01 Dec 2026',
-            dateEndRaw: '2026-12-05',
-            dateEndFormatted: '05 Dec 2026',
-            score: '98',
-            link: 'https://scratch.mit.edu',
-            certifStatus: 'siap cetak',
-            certif: '',
-          },
-          {
-            rowNumber: 4,
-            studentId: '261202-RK-003',
-            student: 'Rian Kurniawan',
-            course: 'Python Game Developer',
-            batch: '2612',
-            session: 'Session 2',
-            teacher: 'Ms. Sarah',
-            room: 'Lab B',
-            dateStartRaw: '2026-12-08',
-            dateStartFormatted: '08 Dec 2026',
-            dateEndRaw: '2026-12-12',
-            dateEndFormatted: '12 Dec 2026',
-            score: '92',
-            link: 'https://replit.com',
-            certifStatus: 'siap cetak',
-            certif: '',
-          },
-        ]);
-        setSheetTitle('Sheet1');
-        setCertifColLetter('M');
-        setIsLoadingRows(false);
-        return;
-      }
-
       try {
         const res = await fetch(`/api/recap/pending?fileId=${encodeURIComponent(recapSheet.id)}`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: authHeaders,
         });
 
         const data = await res.json();
@@ -164,11 +107,12 @@ export default function Dashboard({
         }
 
         setRows(data.pendingRows || []);
-        setSheetTitle(data.sheetTitle || 'Sheet1');
+        setSheetTitle(data.sheetTitle || 'Recap');
         setCertifColLetter(data.certifColLetter || 'M');
       } catch (err: any) {
         if (!isCancelled) {
           console.error('Error fetching recap data:', err);
+          setRows([]);
           setFetchError(err?.message || 'Failed to load spreadsheet records');
         }
       } finally {
@@ -183,7 +127,8 @@ export default function Dashboard({
     return () => {
       isCancelled = true;
     };
-  }, [accessToken, isDemo, recapSheet.id, refreshCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, recapSheet.id, refreshCount]);
 
   const loadPendingRows = () => {
     setIsLoadingRows(true);
@@ -206,24 +151,12 @@ export default function Dashboard({
       setCurrentStepIndex(i + 1);
       setCurrentStudentName(rowItem.student);
 
-      if (isDemo) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        succeededCount++;
-        results.push({
-          student: rowItem.student,
-          course: rowItem.course,
-          success: true,
-          pdfUrl: `https://drive.google.com/file/d/demo_pdf_${i + 1}/view`,
-        });
-        continue;
-      }
-
       try {
         const res = await fetch('/api/certificates/generate-row', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
+            ...authHeaders,
           },
           body: JSON.stringify({
             rowData: rowItem,
@@ -388,9 +321,12 @@ export default function Dashboard({
               <div>
                 <div className="flex items-center gap-2.5">
                   <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Pending Certificates</h2>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
-                    {rows.length} {rows.length === 1 ? 'student' : 'students'}
-                  </span>
+                  {/* Count is only meaningful after a successful read. */}
+                  {!fetchError && !isLoadingRows && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                      {rows.length} {rows.length === 1 ? 'student' : 'students'}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
                   All listed rows have status <span className="text-gray-600 font-mono">siap cetak</span> and are ready for bulk issuance.
@@ -504,7 +440,10 @@ export default function Dashboard({
                   ))}
                 </tbody>
               </table>
-            ) : (
+            ) : fetchError || isLoadingRows ? null : (
+              // Empty state only after a SUCCESSFUL read that found zero rows.
+              // On a read error the red banner above stands alone; while loading
+              // nothing flashes.
               <div className="p-12 text-center flex flex-col items-center justify-center">
                 <div className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-gray-400 mb-3">
                   <CheckCircle2 className="w-6 h-6 text-green-500" />
