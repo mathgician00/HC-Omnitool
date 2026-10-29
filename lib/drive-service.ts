@@ -1,5 +1,12 @@
+// Save as: lib/drive-service.ts (replaces the whole file)
 import { google } from 'googleapis';
 import { formatDateDDMmmYYYY, getProgramConfig } from './config';
+
+// Tab holding the recap data. The template's first tab is a user guide
+// ("PANDUAN PENGGUNAAN"), so the tab is selected by name, never by position.
+// Override with the RECAP_TAB_NAME env var if the tab is ever renamed.
+const RECAP_TAB_NAME = process.env.RECAP_TAB_NAME || 'Recap';
+const HEADER_SCAN_ROWS = 20;
 
 export function getColumnLetter(colIndex: number): string {
   let temp = colIndex;
@@ -107,15 +114,11 @@ export async function findOrCreateRecapSheet(
   const { drive } = getUserGoogleClients(accessToken);
   const config = getProgramConfig();
 
-  // Drive-wide search by name + ownership — NOT scoped to folderId's children.
-  // This mirrors findOrCreateFolder's approach above: if the admin moves the
-  // recap FILE itself out of the program folder (independently of the folder
-  // ever moving), this still finds it, rather than creating a duplicate back
-  // inside the folder and orphaning the moved one.
-  //
-  // Drive's query language has no native "starts with" operator, so `contains`
-  // is used here only to narrow the API result set; the precise prefix check
-  // still happens client-side below via `.startsWith()`, unchanged.
+  // Drive-wide search by name + ownership: NOT scoped to folderId's children.
+  // Mirrors findOrCreateFolder: if the admin moves the recap FILE out of the
+  // program folder, this still finds it instead of creating a duplicate.
+  // Drive's query language has no "starts with", so `contains` only narrows the
+  // API result set; the precise prefix check is the client-side `.startsWith()`.
   const escapedPrefix = searchPrefix.replace(/'/g, "\\'");
   const q = `mimeType = 'application/vnd.google-apps.spreadsheet' and 'me' in owners and trashed = false and name contains '${escapedPrefix}'`;
 
@@ -224,11 +227,24 @@ export async function fetchRecapData(
 ): Promise<SheetParseResult> {
   const { sheets } = getUserGoogleClients(accessToken);
 
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  const firstSheet = meta.data.sheets?.[0];
-  const sheetTitle = firstSheet?.properties?.title || 'Sheet1';
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties.title',
+  });
+  const titles = (meta.data.sheets || [])
+    .map((s) => s.properties?.title || '')
+    .filter(Boolean);
 
-  const range = `'${sheetTitle}'!A1:Z500`;
+  const sheetTitle = titles.find(
+    (t) => t.trim().toLowerCase() === RECAP_TAB_NAME.trim().toLowerCase()
+  );
+  if (!sheetTitle) {
+    throw new Error(
+      `Tab '${RECAP_TAB_NAME}' was not found in this spreadsheet. Tabs found: [${titles.join(', ')}]`
+    );
+  }
+
+  const range = `'${sheetTitle.replace(/'/g, "''")}'!A1:Z500`;
   const valRes = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range,
@@ -237,17 +253,33 @@ export async function fetchRecapData(
 
   const allValues = valRes.data.values || [];
   if (allValues.length === 0) {
-    throw new Error(`The recap spreadsheet '${spreadsheetId}' is empty.`);
+    throw new Error(`The '${sheetTitle}' tab is empty.`);
   }
 
-  const headerRow = allValues[0].map((h: any) => String(h || '').trim());
+  // Locate the header row by scanning the first rows for 'StudentID' (same
+  // convention as the Apps Script) instead of assuming it is row 1.
+  let headerRowIdx = -1;
+  for (let r = 0; r < Math.min(HEADER_SCAN_ROWS, allValues.length); r++) {
+    const cells = allValues[r] || [];
+    if (cells.some((c: any) => String(c || '').trim().toLowerCase() === 'studentid')) {
+      headerRowIdx = r;
+      break;
+    }
+  }
+  if (headerRowIdx === -1) {
+    throw new Error(
+      `Could not find a header row containing 'StudentID' in the first ${HEADER_SCAN_ROWS} rows of the '${sheetTitle}' tab.`
+    );
+  }
+
+  const headerRow = allValues[headerRowIdx].map((h: any) => String(h || '').trim());
 
   const headerIndices: Record<string, number> = {};
   for (const expected of EXPECTED_HEADERS) {
     const idx = headerRow.findIndex((h) => h.toLowerCase() === expected.toLowerCase());
     if (idx === -1) {
       throw new Error(
-        `Recap sheet is missing required column header: '${expected}'. Found headers: [${headerRow.filter(Boolean).join(', ')}]`
+        `The '${sheetTitle}' tab is missing required column header: '${expected}'. Found headers: [${headerRow.filter(Boolean).join(', ')}]`
       );
     }
     headerIndices[expected] = idx;
@@ -257,10 +289,12 @@ export async function fetchRecapData(
   const certifColLetter = getColumnLetter(certifColIndex);
 
   const pendingRows: RecapRowData[] = [];
-  const dataRows = allValues.slice(1);
+  const dataRows = allValues.slice(headerRowIdx + 1);
 
   dataRows.forEach((row, idx) => {
-    const rowNumber = idx + 2;
+    // Actual sheet row number: the header sits on sheet row (headerRowIdx + 1),
+    // so the first data row is headerRowIdx + 2.
+    const rowNumber = headerRowIdx + 2 + idx;
     const getVal = (header: string) => {
       const col = headerIndices[header];
       return col !== undefined && row[col] !== undefined ? String(row[col]).trim() : '';
@@ -414,7 +448,8 @@ export async function generateCertificateForRow(
       // ignore
     }
 
-    const cellRange = `'${sheetTitle}'!${certifColLetter}${rowData.rowNumber}`;
+    // Narrow single-cell write: only the Certif cell of this row is touched.
+    const cellRange = `'${sheetTitle.replace(/'/g, "''")}'!${certifColLetter}${rowData.rowNumber}`;
     await sheets.spreadsheets.values.update({
       spreadsheetId: recapFileId,
       range: cellRange,
