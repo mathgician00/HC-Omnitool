@@ -188,8 +188,8 @@ export const EXPECTED_HEADERS = [
   'Room',
   'Date_start',
   'Date_end',
-  'Score',
-  'Link',
+  'Final Score',
+  'Project Link',
   'Certif_status',
   'Certif',
 ] as const;
