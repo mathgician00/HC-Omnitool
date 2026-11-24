@@ -1,3 +1,4 @@
+// Save as: lib/drive-service.ts (replaces the whole file)
 import { google } from 'googleapis';
 import { formatDateDDMmmYYYY, getProgramConfig } from './config';
 
@@ -197,9 +198,13 @@ export const EXPECTED_HEADERS = [
   'StudentID',
   'Student',
   'Course',
-  'Teacher',
   'Date_start',
   'Date_end',
+  'Project Title',
+  'Exploration',
+  'Attendance',
+  'Project',
+  'Presentation',
   'Project Link',
   'Certif_status',
   'Certif',
@@ -207,7 +212,7 @@ export const EXPECTED_HEADERS = [
 
 // Optional: read when present, never required, so unrelated header changes
 // cannot break certificate generation.
-const OPTIONAL_HEADERS = ['Batch', 'Session', 'Room', 'Final Score'] as const;
+const OPTIONAL_HEADERS = ['Teacher', 'Batch', 'Session', 'Room', 'Final Score'] as const;
 
 export interface RecapRowData {
   rowNumber: number;
@@ -224,6 +229,11 @@ export interface RecapRowData {
   dateEndFormatted: string;
   score: string;
   link: string;
+  projectTitle: string;
+  exploration: string;
+  attendance: string;
+  project: string;
+  presentation: string;
   certifStatus: string;
   certif: string;
 }
@@ -339,6 +349,11 @@ export async function fetchRecapData(
       dateEndFormatted: formatDateDDMmmYYYY(dateEndRaw),
       score: getVal('Final Score'),
       link: getVal('Project Link'),
+      projectTitle: getVal('Project Title'),
+      exploration: getVal('Exploration'),
+      attendance: getVal('Attendance'),
+      project: getVal('Project'),
+      presentation: getVal('Presentation'),
       certifStatus,
       certif: getVal('Certif'),
     };
@@ -391,12 +406,18 @@ export async function generateCertificateForRow(
       throw new Error(`Failed to duplicate certificate template Slides file.`);
     }
 
+    // Tag text in the Slides template -> value from this student's Recap row.
+    // Matching is exact and case-sensitive. {{QR}} is handled separately below.
     const mergeTags: Record<string, string> = {
       '{{StudentName}}': rowData.student,
+      '{{Date_start}}': rowData.dateStartFormatted,
+      '{{Date_end}}': rowData.dateEndFormatted,
       '{{Course}}': rowData.course,
-      '{{Teacher}}': rowData.teacher,
-      '{{DateStart}}': rowData.dateStartFormatted,
-      '{{DateEnd}}': rowData.dateEndFormatted,
+      '{{Exploration}}': rowData.exploration,
+      '{{Attendance}}': rowData.attendance,
+      '{{Project}}': rowData.project,
+      '{{Presentation}}': rowData.presentation,
+      '{{Project Title}}': rowData.projectTitle,
     };
 
     const replaceRequests: any[] = Object.entries(mergeTags).map(([tag, val]) => ({
