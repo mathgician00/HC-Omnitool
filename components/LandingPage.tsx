@@ -86,7 +86,7 @@ export default function LandingPage({
           <div className="text-center mb-8">
             <h1 className="text-2xl font-semibold text-gray-900 mb-2">Holiday Camp Operational</h1>
             <p className="text-gray-500 text-sm leading-relaxed">
-              Sign in to find or set up your branch's recap sheet and issue certificates.
+              Disarankan menggunakan akun branch.
             </p>
           </div>
 
