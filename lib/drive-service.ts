@@ -1,4 +1,3 @@
-// Save as: lib/drive-service.ts (replaces the whole file)
 import { google } from 'googleapis';
 import { formatDateDDMmmYYYY, getProgramConfig } from './config';
 
@@ -7,6 +6,21 @@ import { formatDateDDMmmYYYY, getProgramConfig } from './config';
 // Override with the RECAP_TAB_NAME env var if the tab is ever renamed.
 const RECAP_TAB_NAME = process.env.RECAP_TAB_NAME || 'Recap';
 const HEADER_SCAN_ROWS = 20;
+
+// Put this exact text inside the QR placeholder shape in the Slides template.
+const QR_TAG = '{{QR}}';
+
+function normalizeLink(raw: string): string {
+  const v = (raw || '').trim();
+  if (!v) return '';
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+
+// The Slides API fetches this URL itself, so it must be publicly reachable.
+// NOTE: the project link is sent to this third-party service to render the QR.
+function buildQrImageUrl(link: string): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=0&format=png&data=${encodeURIComponent(link)}`;
+}
 
 export function getColumnLetter(colIndex: number): string {
   let temp = colIndex;
@@ -178,21 +192,22 @@ export async function findOrCreateRecapSheet(
   }
 }
 
+// Required: certificate generation cannot run without these.
 export const EXPECTED_HEADERS = [
   'StudentID',
   'Student',
   'Course',
-  'Batch',
-  'Session',
   'Teacher',
-  'Room',
   'Date_start',
   'Date_end',
-  'Final Score',
   'Project Link',
   'Certif_status',
   'Certif',
 ] as const;
+
+// Optional: read when present, never required, so unrelated header changes
+// cannot break certificate generation.
+const OPTIONAL_HEADERS = ['Batch', 'Session', 'Room', 'Final Score'] as const;
 
 export interface RecapRowData {
   rowNumber: number;
@@ -285,6 +300,11 @@ export async function fetchRecapData(
     headerIndices[expected] = idx;
   }
 
+  for (const optional of OPTIONAL_HEADERS) {
+    const idx = headerRow.findIndex((h) => h.toLowerCase() === optional.toLowerCase());
+    if (idx !== -1) headerIndices[optional] = idx;
+  }
+
   const certifColIndex = headerIndices['Certif'];
   const certifColLetter = getColumnLetter(certifColIndex);
 
@@ -317,8 +337,8 @@ export async function fetchRecapData(
       dateStartFormatted: formatDateDDMmmYYYY(dateStartRaw),
       dateEndRaw,
       dateEndFormatted: formatDateDDMmmYYYY(dateEndRaw),
-      score: getVal('Score'),
-      link: getVal('Link'),
+      score: getVal('Final Score'),
+      link: getVal('Project Link'),
       certifStatus,
       certif: getVal('Certif'),
     };
@@ -379,7 +399,7 @@ export async function generateCertificateForRow(
       '{{DateEnd}}': rowData.dateEndFormatted,
     };
 
-    const replaceRequests = Object.entries(mergeTags).map(([tag, val]) => ({
+    const replaceRequests: any[] = Object.entries(mergeTags).map(([tag, val]) => ({
       replaceAllText: {
         containsText: {
           text: tag,
@@ -388,6 +408,27 @@ export async function generateCertificateForRow(
         replaceText: val || '',
       },
     }));
+
+    // QR code: the shape whose text contains {{QR}} is replaced by an image of
+    // the QR, fitted inside the shape's bounds. With no link, the placeholder
+    // text is blanked instead so a literal "{{QR}}" never appears on the cert.
+    const qrLink = normalizeLink(rowData.link);
+    if (qrLink) {
+      replaceRequests.push({
+        replaceAllShapesWithImage: {
+          imageUrl: buildQrImageUrl(qrLink),
+          imageReplaceMethod: 'CENTER_INSIDE',
+          containsText: { text: QR_TAG, matchCase: true },
+        },
+      });
+    } else {
+      replaceRequests.push({
+        replaceAllText: {
+          containsText: { text: QR_TAG, matchCase: true },
+          replaceText: '',
+        },
+      });
+    }
 
     await slides.presentations.batchUpdate({
       presentationId: tempSlidesId,
