@@ -1,5 +1,6 @@
 // Save as: lib/drive-service.ts (replaces the whole file)
 import { google } from 'googleapis';
+import { Readable } from 'stream';
 import { formatDateDDMmmYYYY, getProgramConfig } from './config';
 
 // Tab holding the recap data. The template's first tab is a user guide
@@ -483,7 +484,8 @@ export async function generateCertificateForRow(
       },
       media: {
         mimeType: 'application/pdf',
-        body: pdfBuffer as any,
+        // The Drive client calls body.pipe(), so this must be a stream, not a Buffer.
+        body: Readable.from([pdfBuffer]),
       },
       fields: 'id, name, webViewLink',
     });
