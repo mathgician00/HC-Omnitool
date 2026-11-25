@@ -386,7 +386,7 @@ export default function Dashboard({
                   )}
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Students marked ready to print.
+                  Student names will be printed as displayed on the preview below. Ensure its spelling and capitatlisation are correct.
                 </p>
               </div>
             </div>
@@ -438,7 +438,7 @@ export default function Dashboard({
                 />
               </div>
               <p className="text-[11px] text-gray-400 mt-1.5">
-                Creating certificates and saving them to your Drive. Please keep this page open.
+                Creating certificates and saving them to your Drive.
               </p>
             </div>
           )}
@@ -509,7 +509,7 @@ export default function Dashboard({
                 </div>
                 <h3 className="text-base font-semibold text-gray-700 mb-1">No certificates pending</h3>
                 <p className="text-xs text-gray-400 max-w-sm mx-auto mb-4">
-                  No students are marked ready to print yet. Update their status in Google Sheets, then refresh.
+                  No certificates to print now. Check their recent status in Google Sheets, then clcik the refresh button above.
                 </p>
                 <a
                   href={recapSheet.webViewLink}
@@ -518,7 +518,7 @@ export default function Dashboard({
                   className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 underline"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Google Sheets to edit statuses</span>
+                  <span>Open Google Sheets to update</span>
                 </a>
               </div>
             )}
