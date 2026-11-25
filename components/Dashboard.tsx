@@ -1,7 +1,7 @@
 // Save as: components/Dashboard.tsx (replaces the whole file)
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ExternalLink,
   RotateCcw,
@@ -62,6 +62,34 @@ interface GenerationSummary {
   }>;
 }
 
+// How long the summary popup stays open (it never auto-closes if any certificate failed).
+const STATS_POPUP_MS = 5000;
+
+interface GenerationStats {
+  generated: number;
+  totalMs: number;
+  avgMs: number;
+  hasFailures: boolean;
+}
+
+// Running clock shown while generating, e.g. "2:07".
+function formatClock(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Duration for the summary, e.g. "8.4 s", "45 s", "2m 14s", "1h 05m".
+function formatDuration(ms: number): string {
+  const totalSec = ms / 1000;
+  if (totalSec < 10) return `${totalSec.toFixed(1)} s`;
+  const s = Math.round(totalSec);
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
 export default function Dashboard({
   accessToken,
   user,
@@ -82,6 +110,41 @@ export default function Dashboard({
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [currentStudentName, setCurrentStudentName] = useState('');
   const [generationSummary, setGenerationSummary] = useState<GenerationSummary | null>(null);
+
+  // Running timer + summary popup.
+  const generationStartRef = useRef<number>(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [statsPopup, setStatsPopup] = useState<GenerationStats | null>(null);
+  const [popupRemaining, setPopupRemaining] = useState(STATS_POPUP_MS);
+  const [popupPaused, setPopupPaused] = useState(false);
+
+  // Elapsed clock: derived from the start timestamp, not counted ticks, so a
+  // throttled background tab only makes the display lag; the totals stay exact.
+  useEffect(() => {
+    if (!isGenerating) return;
+    const id = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - generationStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isGenerating]);
+
+  // Popup countdown: only runs while the tab is visible and the card is not hovered.
+  // Skipped entirely when something failed (the popup then waits to be dismissed).
+  useEffect(() => {
+    if (!statsPopup || statsPopup.hasFailures) return;
+    const TICK = 100;
+    const id = setInterval(() => {
+      if (popupPaused || document.visibilityState !== 'visible') return;
+      setPopupRemaining((r) => r - TICK);
+    }, TICK);
+    return () => clearInterval(id);
+  }, [statsPopup, popupPaused]);
+
+  useEffect(() => {
+    if (statsPopup && !statsPopup.hasFailures && popupRemaining <= 0) {
+      setStatsPopup(null);
+    }
+  }, [popupRemaining, statsPopup]);
 
   const authHeaders: Record<string, string> = accessToken
     ? { Authorization: `Bearer ${accessToken}` }
@@ -137,6 +200,9 @@ export default function Dashboard({
   const handleBulkGenerate = async () => {
     if (rows.length === 0 || isGenerating) return;
 
+    generationStartRef.current = Date.now();
+    setElapsedSec(0);
+    setStatsPopup(null);
     setIsGenerating(true);
     setGenerationSummary(null);
     setCurrentStepIndex(0);
@@ -195,6 +261,17 @@ export default function Dashboard({
         });
       }
     }
+
+    const totalMs = Date.now() - generationStartRef.current;
+    setStatsPopup({
+      generated: succeededCount,
+      totalMs,
+      // Average over successful certificates only.
+      avgMs: succeededCount > 0 ? totalMs / succeededCount : 0,
+      hasFailures: failedCount > 0,
+    });
+    setPopupRemaining(STATS_POPUP_MS);
+    setPopupPaused(false);
 
     setIsGenerating(false);
     setGenerationSummary({
@@ -350,7 +427,9 @@ export default function Dashboard({
                 <span>
                   Processing <strong>{currentStudentName}</strong> ({currentStepIndex} of {rows.length})
                 </span>
-                <span>{Math.round((currentStepIndex / rows.length) * 100)}%</span>
+                <span className="tabular-nums">
+                  {formatClock(elapsedSec)} elapsed · {Math.round((currentStepIndex / rows.length) * 100)}%
+                </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                 <div
@@ -502,6 +581,63 @@ export default function Dashboard({
           </div>
         )}
       </main>
+
+      {statsPopup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/20 px-4"
+          onClick={() => setStatsPopup(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Certificate generation summary"
+            className="w-full max-w-sm bg-white border border-gray-200 rounded-2xl shadow-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={() => setPopupPaused(true)}
+            onMouseLeave={() => setPopupPaused(false)}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <CheckCircle2 className="w-5 h-5 text-green-500" />
+              <h3 className="text-base font-semibold text-gray-900">Certificates ready</h3>
+            </div>
+
+            <dl className="divide-y divide-gray-100 text-sm">
+              <div className="flex items-center justify-between py-2.5">
+                <dt className="text-gray-500">Certificates generated</dt>
+                <dd className="font-semibold text-gray-900 tabular-nums">{statsPopup.generated}</dd>
+              </div>
+              <div className="flex items-center justify-between py-2.5">
+                <dt className="text-gray-500">Time needed</dt>
+                <dd className="font-semibold text-gray-900 tabular-nums">
+                  {formatDuration(statsPopup.totalMs)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between py-2.5">
+                <dt className="text-gray-500">Average per certificate</dt>
+                <dd className="font-semibold text-gray-900 tabular-nums">
+                  {statsPopup.generated > 0 ? formatDuration(statsPopup.avgMs) : '—'}
+                </dd>
+              </div>
+            </dl>
+
+            {statsPopup.hasFailures ? (
+              <button
+                onClick={() => setStatsPopup(null)}
+                className="mt-4 w-full px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            ) : (
+              <div className="mt-4 h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-1 bg-gray-900 rounded-full transition-[width] duration-100 ease-linear"
+                  style={{ width: `${Math.max(0, (popupRemaining / STATS_POPUP_MS) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
