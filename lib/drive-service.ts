@@ -541,3 +541,31 @@ export async function generateCertificateForRow(
     };
   }
 }
+
+/**
+ * Shares a freshly created recap copy with the program operator (OPERATOR_EMAIL).
+ * Drive emails the operator a standard "shared a spreadsheet with you" notice that
+ * names the branch admin, and the file appears in the operator's "Shared with me".
+ * No-op when OPERATOR_EMAIL is unset or is the same account as the signed-in admin.
+ */
+export async function shareRecapWithOperator(
+  accessToken: string,
+  fileId: string,
+  adminEmail: string
+): Promise<void> {
+  const operatorEmail = (process.env.OPERATOR_EMAIL || '').trim();
+  if (!operatorEmail) return;
+  if (operatorEmail.toLowerCase() === (adminEmail || '').trim().toLowerCase()) return;
+
+  const { drive } = getUserGoogleClients(accessToken);
+  await drive.permissions.create({
+    fileId,
+    sendNotificationEmail: true,
+    emailMessage: `New recap sheet created by ${adminEmail}.`,
+    requestBody: {
+      type: 'user',
+      role: 'writer', // editor access, so the operator can open and fix the copy
+      emailAddress: operatorEmail,
+    },
+  });
+}
