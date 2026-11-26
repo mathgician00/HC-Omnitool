@@ -1,6 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+// Save as: app/api/recap/resolve/route.ts (replaces the whole file)
+import { NextRequest, NextResponse, after } from 'next/server';
 import { getProgramConfig } from '@/lib/config';
-import { findOrCreateFolder, findOrCreateRecapSheet } from '@/lib/drive-service';
+import {
+  findOrCreateFolder,
+  findOrCreateRecapSheet,
+  shareRecapWithOperator,
+} from '@/lib/drive-service';
 import { logDuplicationEvent } from '@/lib/master-log';
 
 export async function POST(req: NextRequest) {
@@ -22,14 +27,33 @@ export async function POST(req: NextRequest) {
     const folder = await findOrCreateFolder(token, config.folderName);
     const recapSheet = await findOrCreateRecapSheet(token, folder.id, config.searchPrefix);
 
-    logDuplicationEvent({
-      email: userEmail,
-      action: recapSheet.isNew ? 'created_new' : 'found_existing',
-      fileId: recapSheet.id,
-      fileName: recapSheet.name,
-      fileUrl: recapSheet.webViewLink,
-    }).catch((err) => {
-      console.warn('[ResolveAPI] Service account log error:', err);
+    // Brand-new copy only: share it with the operator. Google then emails the
+    // operator a "shared a spreadsheet with you" notice naming the branch admin,
+    // and the copy appears in the operator's "Shared with me". A failure here
+    // must never block the admin, so it is caught and only logged.
+    if (recapSheet.isNew) {
+      try {
+        await shareRecapWithOperator(token, recapSheet.id, userEmail);
+      } catch (shareErr: any) {
+        console.warn('[ResolveAPI] Could not share new recap with operator:', shareErr?.message || shareErr);
+      }
+    }
+
+    // Run the audit log AFTER the response is sent. On Vercel a serverless function
+    // can be frozen as soon as it responds, so an un-awaited promise may never
+    // finish; after() keeps the function alive until the log write completes.
+    after(async () => {
+      try {
+        await logDuplicationEvent({
+          email: userEmail,
+          action: recapSheet.isNew ? 'created_new' : 'found_existing',
+          fileId: recapSheet.id,
+          fileName: recapSheet.name,
+          fileUrl: recapSheet.webViewLink,
+        });
+      } catch (err) {
+        console.warn('[ResolveAPI] Service account log error:', err);
+      }
     });
 
     return NextResponse.json({
